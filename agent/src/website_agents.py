@@ -288,14 +288,15 @@ def book_calendar_meeting(name: str, email: str) -> dict:
 
 
 # --- demo-mode instant booking -----------------------------------------------
-@function_tool
-def book_demo_slot(name: str, email: str, when: str) -> dict:
+@function_tool(strict_mode=False)
+def book_demo_slot(when: str, name: str = "", email: str = "") -> dict:
     """Book a demo or onboarding call at the time the visitor names (e.g.
     'tomorrow at 3 PM'). DEMO MODE: this instantly confirms the requested slot and
-    returns a confirmation — it does not create a real calendar event. Collect and
-    confirm name, email and the requested time first. If the visitor gives only a
-    vague time (e.g. 'tomorrow afternoon'), pick a sensible concrete slot and pass
-    it as `when` so you can confirm an exact time."""
+    returns a confirmation — it does not create a real calendar event. `when` is
+    required; if the visitor gives only a vague time (e.g. 'tomorrow afternoon'),
+    pick a sensible concrete slot and pass it as `when`. Pass `name`/`email` if you
+    already know them, but do NOT stall the booking to collect them — confirm the
+    slot first."""
     webhook = os.environ.get("INTEREST_FORM_WEBHOOK")
     payload = {"name": name, "email": email, "when": when, "type": "demo_booking"}
     if webhook:
@@ -330,7 +331,7 @@ def submit_website_form(form_action: str, form_data: dict) -> dict:
 # told to avoid markdown — same rule as the text widget.
 lead_agent = Agent(
     name="Lead Capture",
-    model="gpt-4o-mini",
+    model="gpt-4o",
     handoff_description="Use this if the visitor explicitly wants to fill out the contact form, submit details, or send an inquiry directly in the chat instead of visiting the contact page.",
     instructions=(
         "Collect the visitor's name, email, and what they're interested in. "
@@ -344,15 +345,15 @@ lead_agent = Agent(
 
 booking_agent = Agent(
     name="Booking",
-    model="gpt-4o-mini",
+    model="gpt-4o",
     handoff_description="Use this if the visitor explicitly wants to book a demo, schedule a meeting, or get a booking link directly in the chat instead of visiting the contact page.",
     instructions=(
-        "Get the visitor's name, email, and the day/time they want for the demo or "
-        "onboarding call. Confirm those back, then call book_demo_slot with the "
-        "requested time. If they give a vague time like 'tomorrow afternoon', pick a "
-        "sensible concrete slot (e.g. 3 PM) and confirm that exact time. After "
-        "booking, warmly confirm it's booked for that time and that a confirmation "
-        "is on the way.\n"
+        "Book the demo/onboarding call as fast as possible. As soon as you have a "
+        "time — even a vague one like 'tomorrow afternoon' — pick a concrete slot "
+        "(e.g. 3 PM) and call book_demo_slot with that `when` immediately. Use the "
+        "visitor's name/email if you already know them, but do NOT hold up the "
+        "booking to ask for them. After booking, confirm warmly in one line, e.g. "
+        "'Booked for 3 PM. Confirmation's on the way.'\n"
         "CRITICAL: This is a spoken voice conversation. Do NOT use any markdown "
         "formatting. Output only clean, plain text. Keep replies short (1-2 sentences)."
     ),
@@ -366,7 +367,7 @@ booking_agent = Agent(
 def make_triage_agent(template: str | None = None) -> Agent:
     return Agent(
         name="Website Assistant",
-        model="gpt-4o-mini",
+        model="gpt-4o",
         instructions=get_site_instructions(template),
         tools=[
             search_site_content,
