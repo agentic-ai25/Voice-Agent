@@ -1,6 +1,7 @@
 import * as React from 'react';
 import ReactDOM from 'react-dom/client';
 import { getAppConfig } from '@/lib/env';
+import { findSiteConfig } from '@/lib/site-registry';
 import { getShadowStyles } from '@/lib/styles';
 import type { AppConfig } from '@/lib/types';
 import globalCss from '@/styles/globals.css';
@@ -77,9 +78,14 @@ if (sandboxIdAttribute) {
 
   getAppConfig(window.location.origin, sandboxIdAttribute)
     .then((resolved) => {
-      // Per-client data- attributes win over the resolved/remote config so each
-      // GTM tag fully controls its site's template, agent, and branding.
-      const appConfig: AppConfig = { ...resolved, ...overridesFromDataset(scriptTag?.dataset) };
+      // Layer per-site config: base defaults < generic tag data- attributes <
+      // the hostname registry (the authoritative source for GTM installs, since
+      // every site ships the same tag and is differentiated here by hostname).
+      const appConfig: AppConfig = {
+        ...resolved,
+        ...overridesFromDataset(scriptTag?.dataset),
+        ...findSiteConfig(window.location.hostname),
+      };
 
       // Inject dynamic accent color overrides into the shadow root
       const dynamicStyles = getShadowStyles(appConfig);
