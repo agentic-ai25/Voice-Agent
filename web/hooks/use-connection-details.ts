@@ -16,9 +16,13 @@ export default function useConnectionDetails(appConfig: AppConfig) {
   // own participant name, and possibly to choose from existing rooms to join.
 
   const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails | null>(null);
+  // Distinguishes "token hasn't arrived yet" (connectionDetails null, no error →
+  // show connecting) from "the fetch actually failed" (error set → show error).
+  const [connectionError, setConnectionError] = useState<Error | null>(null);
 
   const fetchConnectionDetails = useCallback(async () => {
     setConnectionDetails(null);
+    setConnectionError(null);
     // For cross-origin embeds, the standalone bundle records the origin it was
     // served from (the LiveKit app) so token requests reach the API rather than
     // the host site. Falls back to the current origin for same-origin usage.
@@ -53,7 +57,9 @@ export default function useConnectionDetails(appConfig: AppConfig) {
       data = await res.json();
     } catch (error) {
       console.error('Error fetching connection details:', error);
-      throw new Error('Error fetching connection details!');
+      const err = new Error('Error fetching connection details!');
+      setConnectionError(err);
+      throw err;
     }
 
     setConnectionDetails(data);
@@ -90,6 +96,7 @@ export default function useConnectionDetails(appConfig: AppConfig) {
 
   return {
     connectionDetails,
+    connectionError,
     refreshConnectionDetails: fetchConnectionDetails,
     existingOrRefreshConnectionDetails,
   };

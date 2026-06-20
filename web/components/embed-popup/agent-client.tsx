@@ -25,8 +25,12 @@ function AgentClient({ appConfig }: EmbedFixedAgentClientProps) {
   const room = useMemo(() => new Room(), []);
   const [popupOpen, setPopupOpen] = useState(false);
   const [error, setError] = useState<EmbedErrorDetails | null>(null);
-  const { connectionDetails, refreshConnectionDetails, existingOrRefreshConnectionDetails } =
-    useConnectionDetails(appConfig);
+  const {
+    connectionDetails,
+    connectionError,
+    refreshConnectionDetails,
+    existingOrRefreshConnectionDetails,
+  } = useConnectionDetails(appConfig);
 
   // The connection details the room actually connected with — stashed before an
   // agent-driven navigation so the next page can resume the same room.
@@ -118,10 +122,15 @@ function AgentClient({ appConfig }: EmbedFixedAgentClientProps) {
     // When resuming a navigation we use the stashed details and don't need the
     // freshly fetched ones; otherwise we require connection details to proceed.
     if (!resumeRef.current && !connectionDetails) {
-      setError({
-        title: 'Error fetching connection details',
-        description: 'Please try again later',
-      });
+      // Only an actual fetch failure is an error. If the token simply hasn't
+      // arrived yet (cold server, slow first request), stay in the connecting
+      // state — this effect re-runs once connectionDetails lands.
+      if (connectionError) {
+        setError({
+          title: 'Error fetching connection details',
+          description: 'Please try again later',
+        });
+      }
       return;
     }
     if (room.state !== 'disconnected') {
@@ -160,9 +169,18 @@ function AgentClient({ appConfig }: EmbedFixedAgentClientProps) {
     room,
     popupOpen,
     connectionDetails,
+    connectionError,
     existingOrRefreshConnectionDetails,
     appConfig.isPreConnectBufferEnabled,
   ]);
+
+  // Once the token arrives, clear any stale "fetching" error so the connecting
+  // UI takes over instead of staying stuck on the error card.
+  useEffect(() => {
+    if (connectionDetails) {
+      setError((e) => (e?.title === 'Error fetching connection details' ? null : e));
+    }
+  }, [connectionDetails]);
 
   return (
     <RoomContext.Provider value={room}>
