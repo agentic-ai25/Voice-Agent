@@ -45,6 +45,13 @@ export async function POST(req: Request) {
     // Parse agent configuration from request body
     const body = await req.json();
     const agentName: string = body?.room_config?.agents?.[0]?.agent_name;
+    // Per-site config the widget requested: which prompt template the agent
+    // should use and which page index to navigate against. Forwarded to the
+    // agent worker via agent dispatch metadata.
+    const template: string | undefined = body?.template ?? undefined;
+    const siteId: string | undefined = body?.site_id ?? undefined;
+    const agentMetadata =
+      template || siteId ? JSON.stringify({ template, site_id: siteId }) : undefined;
 
     // Generate participant token
     const participantName = 'user';
@@ -54,7 +61,8 @@ export async function POST(req: Request) {
     const participantToken = await createParticipantToken(
       { identity: participantIdentity, name: participantName },
       roomName,
-      agentName
+      agentName,
+      agentMetadata
     );
 
     // Return connection details
@@ -80,7 +88,8 @@ export async function POST(req: Request) {
 function createParticipantToken(
   userInfo: AccessTokenOptions,
   roomName: string,
-  agentName?: string
+  agentName?: string,
+  agentMetadata?: string
 ): Promise<string> {
   const at = new AccessToken(API_KEY, API_SECRET, {
     ...userInfo,
@@ -97,7 +106,9 @@ function createParticipantToken(
 
   if (agentName) {
     at.roomConfig = new RoomConfiguration({
-      agents: [{ agentName }],
+      // metadata is read by the agent worker (ctx.job.metadata) to pick the
+      // per-site prompt template and page index.
+      agents: [agentMetadata ? { agentName, metadata: agentMetadata } : { agentName }],
     });
   }
 

@@ -45,6 +45,9 @@ export default function useConnectionDetails(appConfig: AppConfig) {
                 agents: [{ agent_name: appConfig.agentName }],
               }
             : undefined,
+          // Per-site config forwarded to the agent worker (dispatch metadata).
+          template: appConfig.template,
+          site_id: appConfig.sandboxId,
         }),
       });
       data = await res.json();

@@ -1,0 +1,33 @@
+{
+  "apiBase": "http://localhost:3000",
+  "clients": [
+    {
+      "id": "localhost",
+      "match": "localhost",
+      "enabled": true,
+      "label": "Local demo (Flowstack)",
+      "sandboxId": "localhost",
+      "agentName": "assistant-2473",
+      "template": "default",
+      "accent": "#16a34a",
+      "accentDark": "#22c55e",
+      "widgetBackground": "",
+      "widgetBackgroundDark": "",
+      "startButtonText": "Start the demo"
+    },
+    {
+      "id": "salesforce.com/in/",
+      "match": "salesforce.com/in/",
+      "enabled": true,
+      "label": "Salesforce",
+      "sandboxId": "salesforce.com",
+      "agentName": "assistant-2473",
+      "template": "salesforce",
+      "accent": "#00a1e0",
+      "accentDark": "#1ab0f0",
+      "widgetBackground": "",
+      "widgetBackgroundDark": "",
+      "startButtonText": "Ask the Salesforce assistant"
+    }
+  ]
+}

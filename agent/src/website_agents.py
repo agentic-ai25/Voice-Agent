@@ -35,9 +35,12 @@ from site_prompts import get_site_instructions
 # Defaults to None; `_pages()` falls back to the bundled PAGES when unset.
 current_site_pages = contextvars.ContextVar("current_site_pages", default=None)
 
-# --- load the bundled scrape -------------------------------------------------
-# Resolve relative to this file so it works regardless of the worker's CWD.
-_INDEX_PATH = Path(__file__).resolve().parent.parent / "site_index.json"
+# --- site indices ------------------------------------------------------------
+# The default bundled scrape, plus an optional per-site directory so one worker
+# can serve multiple client sites (indices/<site_id>.json).
+_AGENT_DIR = Path(__file__).resolve().parent.parent
+_INDEX_PATH = _AGENT_DIR / "site_index.json"
+_INDICES_DIR = _AGENT_DIR / "indices"
 try:
     with _INDEX_PATH.open(encoding="utf-8") as fh:
         SITE = json.load(fh)
@@ -45,6 +48,21 @@ except FileNotFoundError:  # let the worker boot even if ingest hasn't run
     SITE = {"seed": "", "pages": []}
 
 PAGES = SITE["pages"]
+
+
+def load_pages_for(site_id: str | None) -> list[dict]:
+    """Load the page index for a client site id (indices/<site_id>.json),
+    falling back to the bundled default index."""
+    if site_id:
+        safe = site_id.replace("/", "_").replace(":", "_").replace(".", "_")
+        index_path = _INDICES_DIR / f"{safe}.json"
+        if index_path.exists():
+            try:
+                with index_path.open(encoding="utf-8") as fh:
+                    return json.load(fh).get("pages", PAGES)
+            except Exception:
+                pass
+    return PAGES
 
 
 def _pages() -> list[dict]:
@@ -264,13 +282,18 @@ booking_agent = Agent(
     tools=[book_calendar_meeting],
 )
 
-# Instructions come from a swappable per-site template (see site_prompts.py),
-# selected by the SITE_TEMPLATE env var. This gives the agent rich, site-specific
-# context so it stays grounded and only navigates to pages that exist.
-triage_agent = Agent(
-    name="Website Assistant",
-    model="gpt-4o-mini",
-    instructions=get_site_instructions(),
-    tools=[search_site_content, get_redirect_url, navigate_history, submit_website_form],
-    handoffs=[lead_agent, booking_agent],
-)
+# Instructions come from a swappable per-site template (see site_prompts.py).
+# A worker can serve multiple client sites, so build the triage agent per session
+# with the template the widget requested (passed via agent dispatch metadata).
+def make_triage_agent(template: str | None = None) -> Agent:
+    return Agent(
+        name="Website Assistant",
+        model="gpt-4o-mini",
+        instructions=get_site_instructions(template),
+        tools=[search_site_content, get_redirect_url, navigate_history, submit_website_form],
+        handoffs=[lead_agent, booking_agent],
+    )
+
+
+# Default agent (used when no per-site template is supplied, and by tests).
+triage_agent = make_triage_agent()

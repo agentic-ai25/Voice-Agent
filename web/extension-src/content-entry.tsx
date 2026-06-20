@@ -1,11 +1,12 @@
 /**
- * Chrome extension content script — injects the LiveKit voice widget on ANY site.
+ * Chrome extension content script — injects the LiveKit voice widget, but ONLY
+ * on the client sites listed in the registry (extension/clients.json).
  *
  * Runs in the content-script (isolated) world, so it works even on sites with a
- * strict Content-Security-Policy (e.g. salesforce.com) where a <script>/GTM embed
- * would be blocked. It reads per-install config from chrome.storage (API base,
- * sandbox id, accent + pill background colors) and mounts the same widget used by
- * the web embed into a shadow DOM.
+ * strict Content-Security-Policy (e.g. salesforce.com). The registry is loaded
+ * at runtime, so adding a client = adding an object to clients.json and reloading
+ * the page (no rebuild). If the current hostname isn't an enabled entry, nothing
+ * is injected.
  */
 import * as React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -15,51 +16,68 @@ import { getShadowStyles } from '@/lib/styles';
 import type { AppConfig } from '@/lib/types';
 import globalCss from '@/styles/globals.css';
 
-// chrome.* is provided by the extension runtime; avoid a build-time type dep.
-declare const chrome: {
-  storage?: { sync?: { get: (defaults: unknown, cb: (items: Record<string, unknown>) => void) => void } };
+declare const chrome: { runtime?: { getURL?: (path: string) => string } };
+
+type ClientRecord = {
+  id: string;
+  match: string; // hostname, e.g. "salesforce.com" (matches it and *.salesforce.com)
+  enabled?: boolean;
+  label?: string;
+  sandboxId?: string;
+  agentName?: string;
+  template?: string; // per-site prompt template (drives navigation)
+  accent?: string;
+  accentDark?: string;
+  widgetBackground?: string;
+  widgetBackgroundDark?: string;
+  startButtonText?: string;
 };
 
-const STORAGE_DEFAULTS = {
-  lkApiBase: 'http://localhost:3000',
-  lkSandboxId: 'assistant-2473',
-  lkAgentName: APP_CONFIG_DEFAULTS.agentName ?? 'assistant-2473',
-  lkStartButtonText: APP_CONFIG_DEFAULTS.startButtonText ?? 'Start the demo',
-  lkAccent: APP_CONFIG_DEFAULTS.accent ?? '#16a34a',
-  lkAccentDark: APP_CONFIG_DEFAULTS.accentDark ?? '#22c55e',
-  lkWidgetBackground: '', // empty → keep theme default
-  lkWidgetBackgroundDark: '',
-};
+type Registry = { apiBase: string; clients: ClientRecord[] };
 
-function readConfig(): Promise<typeof STORAGE_DEFAULTS> {
-  return new Promise((resolve) => {
-    if (!chrome?.storage?.sync) {
-      resolve(STORAGE_DEFAULTS);
-      return;
-    }
-    chrome.storage.sync.get(STORAGE_DEFAULTS, (items) =>
-      resolve({ ...STORAGE_DEFAULTS, ...(items as typeof STORAGE_DEFAULTS) })
-    );
-  });
+const FALLBACK: Registry = { apiBase: 'http://localhost:3000', clients: [] };
+
+async function readRegistry(): Promise<Registry> {
+  try {
+    const url = chrome?.runtime?.getURL?.('clients.json');
+    if (!url) return FALLBACK;
+    const res = await fetch(url);
+    const reg = (await res.json()) as Registry;
+    return { apiBase: reg.apiBase || FALLBACK.apiBase, clients: reg.clients || [] };
+  } catch (err) {
+    console.error('LiveKit extension: could not load clients.json', err);
+    return FALLBACK;
+  }
 }
 
-function mount(cfg: typeof STORAGE_DEFAULTS) {
-  if (document.getElementById('lk-embed-wrapper')) {
-    return; // already injected (SPA re-run guard)
-  }
+/** Does `host` match the client's pattern (exact host or a subdomain of it)? */
+function hostMatches(host: string, pattern: string): boolean {
+  const p = (pattern || '').trim().toLowerCase().replace(/^\*\./, '').replace(/^https?:\/\//, '');
+  if (!p) return false;
+  return host === p || host.endsWith('.' + p);
+}
+
+function findClient(reg: Registry): ClientRecord | undefined {
+  const host = window.location.hostname.toLowerCase();
+  return reg.clients.find((c) => c.enabled !== false && hostMatches(host, c.match));
+}
+
+function mount(reg: Registry, client: ClientRecord) {
+  if (document.getElementById('lk-embed-wrapper')) return; // SPA re-run guard
 
   // Token requests must go to the LiveKit app, not the host site.
-  (window as Window & { __lkApiBase?: string }).__lkApiBase = cfg.lkApiBase;
+  (window as Window & { __lkApiBase?: string }).__lkApiBase = reg.apiBase;
 
   const appConfig: AppConfig = {
     ...APP_CONFIG_DEFAULTS,
-    sandboxId: cfg.lkSandboxId,
-    agentName: cfg.lkAgentName,
-    startButtonText: cfg.lkStartButtonText,
-    accent: cfg.lkAccent,
-    accentDark: cfg.lkAccentDark,
-    widgetBackground: cfg.lkWidgetBackground || undefined,
-    widgetBackgroundDark: cfg.lkWidgetBackgroundDark || undefined,
+    sandboxId: client.sandboxId || client.id || APP_CONFIG_DEFAULTS.sandboxId,
+    agentName: client.agentName || APP_CONFIG_DEFAULTS.agentName,
+    template: client.template || undefined,
+    startButtonText: client.startButtonText || APP_CONFIG_DEFAULTS.startButtonText,
+    accent: client.accent || APP_CONFIG_DEFAULTS.accent,
+    accentDark: client.accentDark || APP_CONFIG_DEFAULTS.accentDark,
+    widgetBackground: client.widgetBackground || undefined,
+    widgetBackgroundDark: client.widgetBackgroundDark || undefined,
   };
 
   const wrapper = document.createElement('div');
@@ -87,8 +105,12 @@ function mount(cfg: typeof STORAGE_DEFAULTS) {
 }
 
 function start() {
-  readConfig()
-    .then(mount)
+  readRegistry()
+    .then((reg) => {
+      const client = findClient(reg);
+      if (!client) return; // not a registered site — stay invisible
+      mount(reg, client);
+    })
     .catch((err) => console.error('LiveKit extension: failed to mount widget', err));
 }
 

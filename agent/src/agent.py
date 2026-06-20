@@ -28,7 +28,7 @@ from livekit.plugins import (
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from openai.types.responses import ResponseTextDeltaEvent
 
-from website_agents import PAGES, current_site_pages, triage_agent
+from website_agents import current_site_pages, load_pages_for, make_triage_agent
 
 logger = logging.getLogger("agent-assistant-2473")
 
@@ -51,10 +51,14 @@ class DefaultAgent(Agent):
     type check but is never actually invoked — all generation happens here.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, oai_agent, pages: list) -> None:
         super().__init__(
             instructions="(routing handled by the openai-agents triage_agent)",
         )
+        # The per-session openai-agents brain (prompt chosen for this site) and
+        # the page index its tools resolve navigation against.
+        self._oai_agent = oai_agent
+        self._pages = pages
         # Rolling input list for the Agents SDK Runner. This is the source of
         # truth for conversation history (tool results, handoffs, etc.), so we
         # persist it across turns via Runner's `to_input_list()`.
@@ -109,13 +113,13 @@ class DefaultAgent(Agent):
         if not last_user:
             return
 
-        # Make the site pages available to the triage_agent's tools for this turn.
-        current_site_pages.set(PAGES)
+        # Make this site's pages available to the triage_agent's tools this turn.
+        current_site_pages.set(self._pages)
         self._published_actions.clear()
         self._oai_input.append({"role": "user", "content": last_user})
 
         try:
-            result = Runner.run_streamed(triage_agent, input=self._oai_input)
+            result = Runner.run_streamed(self._oai_agent, input=self._oai_input)
             async for ev in result.stream_events():
                 # Text deltas → straight to TTS.
                 if ev.type == "raw_response_event" and isinstance(
@@ -156,6 +160,24 @@ server.setup_fnc = prewarm
 
 @server.rtc_session(agent_name="assistant-2473")
 async def entrypoint(ctx: JobContext):
+    # Per-site config arrives via agent dispatch metadata (set by the web token
+    # API from what the widget requested): which prompt template to use and which
+    # page index to navigate against. Falls back to the default site.
+    template: str | None = None
+    site_id: str | None = None
+    raw_meta = getattr(ctx.job, "metadata", "") or ""
+    if raw_meta:
+        try:
+            meta = json.loads(raw_meta)
+            template = meta.get("template") or None
+            site_id = meta.get("site_id") or meta.get("sandbox_id") or None
+        except (ValueError, AttributeError):
+            logger.warning("could not parse job metadata: %r", raw_meta)
+    logger.info("session site config: template=%s site_id=%s", template, site_id)
+
+    oai_agent = make_triage_agent(template)
+    pages = load_pages_for(site_id)
+
     session = AgentSession(
         stt=inference.STT(model="deepgram/nova-3", language="en"),
         # Stub LLM: required by the pipeline type, but never invoked because
@@ -176,7 +198,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     await session.start(
-        agent=DefaultAgent(),
+        agent=DefaultAgent(oai_agent=oai_agent, pages=pages),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             # Keep the agent session alive when the visitor briefly disconnects

@@ -16,7 +16,9 @@ import { motion } from 'motion/react';
  * - cornerFade:   brightness at the rounded ends (0 = invisible at corners, 1 = even)
  */
 export const BORDER_LINE = {
-  color: '#22c55e',
+  // Follows the accent: --agent-green is set from appConfig.accent (see styles.ts).
+  // Applied via inline style (SVG presentation attributes don't resolve var()).
+  color: 'var(--agent-green, #22c55e)',
   speedSeconds: 5,
   dashLength: 30,
   lineWidth: 2.25,
@@ -60,9 +62,9 @@ export function BorderLine() {
           and bright in the middle (the straight top/bottom edges). */}
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={BORDER_LINE.color} stopOpacity={BORDER_LINE.cornerFade} />
-          <stop offset="50%" stopColor={BORDER_LINE.color} stopOpacity={1} />
-          <stop offset="100%" stopColor={BORDER_LINE.color} stopOpacity={BORDER_LINE.cornerFade} />
+          <stop offset="0%" style={{ stopColor: BORDER_LINE.color, stopOpacity: BORDER_LINE.cornerFade }} />
+          <stop offset="50%" style={{ stopColor: BORDER_LINE.color, stopOpacity: 1 }} />
+          <stop offset="100%" style={{ stopColor: BORDER_LINE.color, stopOpacity: BORDER_LINE.cornerFade }} />
         </linearGradient>
       </defs>
       {/* soft glow underlay */}

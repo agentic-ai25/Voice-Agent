@@ -2,11 +2,11 @@
   "manifest_version": 3,
   "name": "Voice Assistant (LiveKit) — Demo",
   "version": "0.1.0",
-  "description": "Injects the LiveKit voice assistant widget on any website (works past strict CSP) for demos.",
-  "permissions": ["storage"],
+  "description": "Injects the LiveKit voice assistant widget on configured client sites (works past strict CSP) for demos.",
+  "permissions": ["tabs"],
   "host_permissions": ["<all_urls>"],
   "action": {
-    "default_title": "Voice Assistant settings",
+    "default_title": "Voice Assistant clients",
     "default_popup": "popup.html"
   },
   "content_scripts": [
@@ -14,6 +14,12 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["clients.json"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

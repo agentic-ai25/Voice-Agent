@@ -10,6 +10,8 @@ export type ThemeMode = 'dark' | 'light' | 'system';
 export interface AppConfig {
   sandboxId?: string;
   agentName?: string;
+  /** Per-site prompt template name the agent should use (see agent site_prompts). */
+  template?: string;
 
   supportsChatInput: boolean;
   supportsVideoInput: boolean;

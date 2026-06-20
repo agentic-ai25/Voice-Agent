@@ -1,54 +1,37 @@
-/* Options popup for the Voice Assistant extension. Reads/writes chrome.storage.sync. */
-const DEFAULTS = {
-  lkApiBase: 'http://localhost:3000',
-  lkSandboxId: 'assistant-2473',
-  lkAgentName: 'assistant-2473',
-  lkAccent: '#16a34a',
-  lkWidgetBackground: '',
-};
-
+/* Read-only viewer of the client registry (extension/clients.json). */
 const $ = (id) => document.getElementById(id);
 
-function normalizeHex(v) {
-  return /^#[0-9a-fA-F]{6}$/.test(v) ? v : '';
+function row(c) {
+  const el = document.createElement('div');
+  el.className = 'client';
+  const enabled = c.enabled !== false;
+  el.innerHTML = `
+    <span class="dot" style="background:${c.accent || '#16a34a'}"></span>
+    <div class="meta">
+      <div class="name"></div>
+      <div class="host"></div>
+    </div>
+    <span class="tag ${enabled ? '' : 'off'}">${enabled ? (c.template || 'default') : 'disabled'}</span>`;
+  el.querySelector('.name').textContent = c.label || c.id || c.match;
+  el.querySelector('.host').textContent = c.match;
+  return el;
 }
 
-function load() {
-  chrome.storage.sync.get(DEFAULTS, (cfg) => {
-    $('apiBase').value = cfg.lkApiBase;
-    $('sandboxId').value = cfg.lkSandboxId;
-    $('agentName').value = cfg.lkAgentName;
-    $('accent').value = cfg.lkAccent;
-    $('accentColor').value = normalizeHex(cfg.lkAccent) || '#16a34a';
-    $('widgetBackground').value = cfg.lkWidgetBackground;
-    $('bgColor').value = normalizeHex(cfg.lkWidgetBackground) || '#ffffff';
-  });
-}
+fetch(chrome.runtime.getURL('clients.json'))
+  .then((r) => r.json())
+  .then((reg) => {
+    $('api').innerHTML = `API: <b>${reg.apiBase || '(unset)'}</b>`;
+    const list = $('clients');
+    (reg.clients || []).forEach((c) => list.appendChild(row(c)));
+    if (!reg.clients || !reg.clients.length) {
+      list.textContent = 'No clients configured.';
+    }
+  })
+  .catch(() => ($('clients').textContent = 'Could not load clients.json'));
 
-// Keep the color picker and the text field in sync, both directions.
-$('accentColor').addEventListener('input', (e) => ($('accent').value = e.target.value));
-$('accent').addEventListener('input', (e) => {
-  const h = normalizeHex(e.target.value);
-  if (h) $('accentColor').value = h;
-});
-$('bgColor').addEventListener('input', (e) => ($('widgetBackground').value = e.target.value));
-$('widgetBackground').addEventListener('input', (e) => {
-  const h = normalizeHex(e.target.value);
-  if (h) $('bgColor').value = h;
-});
-
-$('save').addEventListener('click', () => {
-  const cfg = {
-    lkApiBase: $('apiBase').value.trim().replace(/\/$/, '') || DEFAULTS.lkApiBase,
-    lkSandboxId: $('sandboxId').value.trim() || DEFAULTS.lkSandboxId,
-    lkAgentName: $('agentName').value.trim() || DEFAULTS.lkAgentName,
-    lkAccent: $('accent').value.trim() || DEFAULTS.lkAccent,
-    lkWidgetBackground: $('widgetBackground').value.trim(),
-  };
-  chrome.storage.sync.set(cfg, () => {
-    $('status').textContent = 'Saved. Reload the page to apply.';
-    setTimeout(() => ($('status').textContent = ''), 2500);
+$('reload').addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) chrome.tabs.reload(tabs[0].id);
+    window.close();
   });
 });
-
-load();

@@ -15,11 +15,11 @@ export function getStyles(appConfig: AppConfig): string {
 
   return [
     accent
-      ? `:root { --primary: ${accent}; --primary-hover: color-mix(in srgb, ${accent} 80%, #000); --fgAccent: ${accent}; }`
+      ? `:root { --primary: ${accent}; --primary-hover: color-mix(in srgb, ${accent} 80%, #000); --fgAccent: ${accent}; --agent-green: ${accent}; --agent-green-soft: color-mix(in srgb, ${accent} 25%, transparent); }`
       : '',
     bg ? `:root { --background: ${bg}; }` : '',
     accentDark
-      ? `.dark { --primary: ${accentDark}; --primary-hover: color-mix(in srgb, ${accentDark} 80%, #000); --fgAccent: ${accentDark}; }`
+      ? `.dark { --primary: ${accentDark}; --primary-hover: color-mix(in srgb, ${accentDark} 80%, #000); --fgAccent: ${accentDark}; --agent-green: ${accentDark}; --agent-green-soft: color-mix(in srgb, ${accentDark} 30%, transparent); }`
       : '',
     bgDark ? `.dark { --background: ${bgDark}; }` : '',
   ]
@@ -40,11 +40,11 @@ export function getShadowStyles(appConfig: AppConfig): string {
 
   return [
     accent
-      ? `:host { --primary: ${accent}; --primary-hover: color-mix(in srgb, ${accent} 80%, #000); --fgAccent: ${accent}; }`
+      ? `:host { --primary: ${accent}; --primary-hover: color-mix(in srgb, ${accent} 80%, #000); --fgAccent: ${accent}; --agent-green: ${accent}; --agent-green-soft: color-mix(in srgb, ${accent} 25%, transparent); }`
       : '',
     bg ? `:host { --background: ${bg}; }` : '',
     accentDark
-      ? `:host(.dark) { --primary: ${accentDark}; --primary-hover: color-mix(in srgb, ${accentDark} 80%, #000); --fgAccent: ${accentDark}; }`
+      ? `:host(.dark) { --primary: ${accentDark}; --primary-hover: color-mix(in srgb, ${accentDark} 80%, #000); --fgAccent: ${accentDark}; --agent-green: ${accentDark}; --agent-green-soft: color-mix(in srgb, ${accentDark} 30%, transparent); }`
       : '',
     bgDark ? `:host(.dark) { --background: ${bgDark}; }` : '',
   ]
