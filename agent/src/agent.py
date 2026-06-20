@@ -1,6 +1,11 @@
 import asyncio
 import json
 import logging
+import os
+import time
+from datetime import datetime, timezone
+
+import httpx
 
 # OpenAI Agents SDK — the orchestration brain. LiveKit owns transport + STT/TTS;
 # the triage_agent (with its tools + handoffs + site index) owns the thinking.
@@ -38,6 +43,35 @@ load_dotenv(".env.local")
 # the web widget over the LiveKit data channel.
 UI_ACTION_TOPIC = "lk.ui.action"
 
+# Analytics: write one session row to Supabase when a conversation ends. Optional
+# — if these aren't set, analytics are skipped (the agent still works normally).
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+
+async def record_session(record: dict) -> None:
+    """Insert a session row into Supabase via PostgREST. Best-effort."""
+    if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+        logger.info("analytics skipped (Supabase not configured): %s", record.get("room_name"))
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/sessions",
+                headers={
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+                json=record,
+            )
+            r.raise_for_status()
+            logger.info("recorded session for %s (%ss)", record.get("site_hostname"),
+                        record.get("duration_seconds"))
+    except Exception as e:
+        logger.warning("failed to record session: %s", e)
+
 
 class DefaultAgent(Agent):
     """LiveKit agent whose brain is the OpenAI Agents SDK `triage_agent`.
@@ -67,6 +101,9 @@ class DefaultAgent(Agent):
         self._published_actions: set = set()
         # Hold references to fire-and-forget publish tasks so they aren't GC'd.
         self._bg_tasks: set = set()
+        # Analytics counters for the session record.
+        self.user_turns = 0
+        self.action_count = 0
 
     async def on_enter(self):
         # Deterministic spoken greeting — no need to round-trip the LLM for this,
@@ -82,6 +119,7 @@ class DefaultAgent(Agent):
         if key in self._published_actions:
             return
         self._published_actions.add(key)
+        self.action_count += 1
         try:
             room = get_job_context().room
             payload = json.dumps(action).encode("utf-8")
@@ -113,6 +151,7 @@ class DefaultAgent(Agent):
         if not last_user:
             return
 
+        self.user_turns += 1
         # Make this site's pages available to the triage_agent's tools this turn.
         current_site_pages.set(self._pages)
         self._published_actions.clear()
@@ -165,18 +204,41 @@ async def entrypoint(ctx: JobContext):
     # page index to navigate against. Falls back to the default site.
     template: str | None = None
     site_id: str | None = None
+    visitor_id: str | None = None
     raw_meta = getattr(ctx.job, "metadata", "") or ""
     if raw_meta:
         try:
             meta = json.loads(raw_meta)
             template = meta.get("template") or None
             site_id = meta.get("site_id") or meta.get("sandbox_id") or None
+            visitor_id = meta.get("visitor_id") or None
         except (ValueError, AttributeError):
             logger.warning("could not parse job metadata: %r", raw_meta)
     logger.info("session site config: template=%s site_id=%s", template, site_id)
 
     oai_agent = make_triage_agent(template)
     pages = load_pages_for(site_id)
+    agent = DefaultAgent(oai_agent=oai_agent, pages=pages)
+    started_at = time.time()
+
+    # On session end, write one analytics row (best-effort).
+    async def _on_shutdown():
+        await record_session(
+            {
+                "site_hostname": site_id or "unknown",
+                "visitor_id": visitor_id,
+                "room_name": ctx.room.name,
+                "template": template,
+                "started_at": datetime.fromtimestamp(started_at, timezone.utc).isoformat(),
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "duration_seconds": int(time.time() - started_at),
+                "user_turns": agent.user_turns,
+                "agent_turns": agent.user_turns,
+                "actions": [],
+            }
+        )
+
+    ctx.add_shutdown_callback(_on_shutdown)
 
     session = AgentSession(
         stt=inference.STT(model="deepgram/nova-3", language="en"),
@@ -198,7 +260,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     await session.start(
-        agent=DefaultAgent(oai_agent=oai_agent, pages=pages),
+        agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             # Keep the agent session alive when the visitor briefly disconnects

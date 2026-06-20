@@ -52,40 +52,65 @@ if (scriptTag?.src) {
   }
 }
 
+/**
+ * Live per-site config from the DB (the `sites` table), so the admin can
+ * enable/disable a site and tweak branding without a redeploy. Returns null on
+ * any failure so the widget falls back to its built-in registry.
+ */
+async function fetchSiteConfig(): Promise<
+  { enabled: boolean; config: Partial<AppConfig> } | null
+> {
+  try {
+    const base =
+      (window as Window & { __lkApiBase?: string }).__lkApiBase || window.location.origin;
+    const res = await fetch(
+      `${base}/api/site-config?host=${encodeURIComponent(window.location.hostname)}`,
+      { cache: 'no-store' }
+    );
+    const data = await res.json();
+    if (data?.found) {
+      return { enabled: data.enabled !== false, config: data.config ?? {} };
+    }
+  } catch {
+    // ignore — fall back to the built-in registry
+  }
+  return null;
+}
+
 if (sandboxIdAttribute) {
-  const wrapper = document.createElement('div');
-  wrapper.setAttribute('id', 'lk-embed-wrapper');
-  // Pin the widget to the top layer of the host page. position:fixed makes this
-  // element its own stacking context, and the maximum 32-bit z-index keeps the
-  // widget above the host site's own layers (modals, sticky headers, etc).
-  // The wrapper itself is 0x0 so it never blocks clicks on the host page — only
-  // the (fixed-positioned) bubble and panel inside it capture pointer events.
-  wrapper.style.cssText =
-    'position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
-  document.body.appendChild(wrapper);
+  Promise.all([getAppConfig(window.location.origin, sandboxIdAttribute), fetchSiteConfig()])
+    .then(([resolved, db]) => {
+      // Admin kill-switch: if the DB explicitly disables this site, render nothing.
+      if (db && db.enabled === false) {
+        console.info('LiveKit widget: disabled for this site by admin.');
+        return;
+      }
 
-  // Use a shadow root so that any relevant css classes don't leak out and effect the broader page
-  const shadowRoot = wrapper.attachShadow({ mode: 'open' });
-
-  // Include all app styles into the shadow root
-  // FIXME: this includes styles for the welcome page / etc, not just the popup embed!
-  const styleTag = document.createElement('style');
-  styleTag.textContent = globalCss;
-  shadowRoot.appendChild(styleTag);
-
-  const reactRoot = document.createElement('div');
-  shadowRoot.appendChild(reactRoot);
-
-  getAppConfig(window.location.origin, sandboxIdAttribute)
-    .then((resolved) => {
-      // Layer per-site config: base defaults < generic tag data- attributes <
-      // the hostname registry (the authoritative source for GTM installs, since
-      // every site ships the same tag and is differentiated here by hostname).
+      // Layer per-site config: defaults < generic tag data- attrs < built-in
+      // hostname registry < live DB config (the admin-controlled source of truth).
       const appConfig: AppConfig = {
         ...resolved,
         ...overridesFromDataset(scriptTag?.dataset),
         ...findSiteConfig(window.location.hostname),
+        ...(db?.config ?? {}),
       };
+
+      const wrapper = document.createElement('div');
+      wrapper.setAttribute('id', 'lk-embed-wrapper');
+      // Pin the widget to the top layer of the host page. position:fixed makes this
+      // element its own stacking context, and the maximum 32-bit z-index keeps the
+      // widget above the host site's own layers (modals, sticky headers, etc).
+      // The wrapper itself is 0x0 so it never blocks clicks on the host page — only
+      // the (fixed-positioned) bubble and panel inside it capture pointer events.
+      wrapper.style.cssText =
+        'position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
+      document.body.appendChild(wrapper);
+
+      // Shadow root so the widget's CSS doesn't leak into / break the host page.
+      const shadowRoot = wrapper.attachShadow({ mode: 'open' });
+      const styleTag = document.createElement('style');
+      styleTag.textContent = globalCss;
+      shadowRoot.appendChild(styleTag);
 
       // Inject dynamic accent color overrides into the shadow root
       const dynamicStyles = getShadowStyles(appConfig);
@@ -95,6 +120,8 @@ if (sandboxIdAttribute) {
         shadowRoot.appendChild(dynamicStyleTag);
       }
 
+      const reactRoot = document.createElement('div');
+      shadowRoot.appendChild(reactRoot);
       const root = ReactDOM.createRoot(reactRoot);
       root.render(<EmbedFixedAgentClient appConfig={appConfig} />);
     })

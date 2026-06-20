@@ -5,6 +5,24 @@ import { AppConfig } from '@/lib/types';
 
 const ONE_MINUTE_IN_MILLISECONDS = 60 * 1000;
 
+/**
+ * A stable per-browser id (scoped to the host site's origin), so analytics can
+ * count unique users. Persisted in localStorage; regenerated if unavailable.
+ */
+function getVisitorId(): string {
+  try {
+    const KEY = 'lk_visitor_id';
+    let id = window.localStorage.getItem(KEY);
+    if (!id) {
+      id = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      window.localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch {
+    return 'v_anon';
+  }
+}
+
 export default function useConnectionDetails(appConfig: AppConfig) {
   // Generate room connection details, including:
   //   - A random Room name
@@ -52,6 +70,7 @@ export default function useConnectionDetails(appConfig: AppConfig) {
           // Per-site config forwarded to the agent worker (dispatch metadata).
           template: appConfig.template,
           site_id: appConfig.sandboxId,
+          visitor_id: getVisitorId(),
         }),
       });
       data = await res.json();

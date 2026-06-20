@@ -54,8 +54,13 @@ export async function POST(req: Request) {
     // agent worker via agent dispatch metadata.
     const template: string | undefined = body?.template ?? undefined;
     const siteId: string | undefined = body?.site_id ?? undefined;
+    // Persistent per-browser id, forwarded so the agent can attribute the session
+    // to a unique user in analytics.
+    const visitorId: string | undefined = body?.visitor_id ?? undefined;
     const agentMetadata =
-      template || siteId ? JSON.stringify({ template, site_id: siteId }) : undefined;
+      template || siteId || visitorId
+        ? JSON.stringify({ template, site_id: siteId, visitor_id: visitorId })
+        : undefined;
 
     // Generate participant token
     const participantName = 'user';
