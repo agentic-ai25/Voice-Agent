@@ -29,6 +29,8 @@ from pathlib import Path
 import httpx
 from agents import Agent, function_tool
 
+from site_prompts import get_site_instructions
+
 # ContextVar holding the active pages list for the current turn (request-scoped).
 # Defaults to None; `_pages()` falls back to the bundled PAGES when unset.
 current_site_pages = contextvars.ContextVar("current_site_pages", default=None)
@@ -262,32 +264,13 @@ booking_agent = Agent(
     tools=[book_calendar_meeting],
 )
 
+# Instructions come from a swappable per-site template (see site_prompts.py),
+# selected by the SITE_TEMPLATE env var. This gives the agent rich, site-specific
+# context so it stays grounded and only navigates to pages that exist.
 triage_agent = Agent(
     name="Website Assistant",
     model="gpt-4o-mini",
-    instructions=(
-        "You are the friendly voice assistant embedded on this company's website. "
-        "The visitor is speaking to you out loud, and your replies are read back to "
-        "them by a text-to-speech voice. \n"
-        "CRITICAL RULE: If the visitor's query relates to, asks about, mentions, or discusses any main page "
-        "(Pricing/Cost, Product/Features, Blog, Contact, About), you MUST call get_redirect_url for that page immediately. "
-        "You MUST call get_redirect_url EVERY single time these topics are mentioned, even if you already know the details "
-        "or have them in your conversation history. Calling get_redirect_url is the ONLY way the page navigates for them.\n"
-        "If the visitor asks to go back, go to the previous page, go forward, or the next page, call navigate_history.\n"
-        "RESPONSE RULES (spoken voice — keep it tight):\n"
-        "1. Never say only 'taking you to X'. The get_redirect_url tool returns the page content in 'page_details'. "
-        "Read it and give a short spoken summary (e.g. name the pricing tiers, or list a couple of key features) "
-        "while confirming you are taking them there. Keep it to 1-3 sentences — this is speech, not a document.\n"
-        "2. Always state the navigation as an automatic fact ('Taking you to the pricing page now...'). "
-        "Never ask permission to navigate.\n"
-        "3. Never read out raw URLs. The UI navigates automatically in the background.\n"
-        "4. CRITICAL: Do NOT use any markdown formatting (no '**', '_', '#'). Output clean, plain, speakable text.\n"
-        "5. FORM FILLING: If the visitor wants to fill out a website form (or one is available in the site index "
-        "'forms' key for the page they care about), offer to fill it for them, collect the field values by voice, "
-        "and call submit_website_form. If they explicitly ask to submit a contact form or book a demo in the chat, "
-        "hand off to the Lead Capture agent or Booking agent respectively.\n"
-        "Be concise, professional, and warm. Never make up prices, features, or URLs that are not in the index."
-    ),
+    instructions=get_site_instructions(),
     tools=[search_site_content, get_redirect_url, navigate_history, submit_website_form],
     handoffs=[lead_agent, booking_agent],
 )

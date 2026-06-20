@@ -1,154 +1,78 @@
-# Voice-Agent — Architecture & File Structure
+# Voice-Agent — Architecture
 
-## What this project is
-
-A **voice AI assistant** that website owners embed with a single `<script>` tag. A user
-clicks a floating pill at the bottom of the page, talks to it, and an AI agent answers by
-voice in real time. It's built on **LiveKit** (real-time audio infrastructure) and split into
-two independently-deployed halves:
+A site assistant that answers questions **and navigates the page** — by voice or text.
+Built on LiveKit (real-time audio) with an OpenAI Agents SDK "brain".
 
 ```
 Voice-Agent/
-├── agent/   →  the brain (Python)   → deploys to LiveKit Cloud
-└── web/     →  the widget (Next.js) → deploys to Vercel
+├── agent/   LiveKit voice worker (Python)      → deploys to LiveKit Cloud
+├── web/     embeddable voice widget (Next.js)  → deploys to Vercel
+├── server.py + app_agents.py + ingest.py       → text chat backend (FastAPI/Vercel)
+└── static/widget.js                            → standalone text widget
 ```
 
----
+## The brain: `triage_agent` (OpenAI Agents SDK)
 
-## The big picture: how a conversation happens
+Defined twice (kept in sync) so it ships with each deploy target:
+- `agent/src/website_agents.py` — for the **voice** worker
+- `app_agents.py` — for the **text** backend
+
+It answers from a crawled `site_index.json` and exposes tools that return structured
+`{action: ...}` outputs the frontend acts on:
+
+| Tool | Action |
+|---|---|
+| `search_site_content` | answer from the index |
+| `get_redirect_url` | `redirect` → navigate to a page |
+| `navigate_history` | `history` → browser back/forward |
+| `submit_website_form` / handoff → `lead_agent` | `form_submitted` |
+| handoff → `booking_agent` | `schedule` → Calendly link |
+
+`ingest.py` builds `site_index.json` (BFS crawl + LLM page classifier). Offline; re-run to refresh.
+
+## Voice path (`agent/`)
+
+`src/agent.py` runs the LiveKit pipeline: Deepgram STT → **bridge** → Cartesia TTS,
+with Silero VAD, turn detection, and noise cancellation.
+
+**The bridge** = `DefaultAgent.llm_node` override:
+1. Each transcribed turn → `Runner.run_streamed(triage_agent, ...)`
+2. Text deltas stream straight to TTS
+3. Tool `{action}` outputs are published to the room on topic `lk.ui.action`
+4. Context persists across turns via `to_input_list()`
+
+The `AgentSession` `llm=` is a stub (required by the type, never invoked).
+`preemptive_generation` is off because tools have side effects. Tests in `agent/tests/`.
+
+## Web widget (`web/`)
+
+The floating pill embedded on the site (injected via `public/embed.js` → `embed-popup.js`,
+isolated in a Shadow DOM). Built separately with webpack — rerun `pnpm build-embed-popup-script`
+after popup changes.
+
+- `app/api/connection-details/route.ts` — mints the LiveKit token (holds the secret).
+- `components/embed-popup/agent-client.tsx` — owns the `Room`; listens on
+  `RoomEvent.DataReceived` (`lk.ui.action`).
+- `lib/ui-actions.ts` — performs actions: `redirect` → `location`, `history` →
+  `history.back()/forward()`, `schedule` → new tab.
+
+## Conversation flow
 
 ```
- Host website                  Vercel (web/)              LiveKit Cloud
-┌──────────────┐    1. load   ┌──────────────┐
-│ <script       │ ───────────> │ embed.js     │  tiny ~1KB loader
-│  embed.js>    │              │ embed-popup.js│ full React widget (webpack bundle)
-└──────┬───────┘              └──────┬───────┘
-       │ user clicks pill            │
-       │ 2. POST /api/connection-details (mints a JWT token + room)
-       │ <───────────────────────────┘
-       │ 3. room.connect(serverUrl, token)
-       └──────────── WebRTC audio ──────────────────> ┌─────────────────┐
-                                                       │ AgentServer     │
-                                                       │ (agent.py)      │
-                                                       │ STT→LLM→TTS loop│
-                       <──── agent's voice audio ───── └─────────────────┘
+mic → STT → llm_node → triage_agent (tools/handoffs) ─┬→ text → TTS → speaker
+                                                       └→ {action} → data channel → widget → navigate page
 ```
 
-1. The host page loads `embed.js`, which lazily injects `embed-popup.js` (the real widget).
-2. When the user clicks, the widget asks `web`'s API for **connection details** — a
-   short-lived JWT and a freshly-named room.
-3. The widget joins that LiveKit room over WebRTC, publishing the user's microphone.
-4. LiveKit Cloud dispatches the **Python agent** into the same room. The agent runs the
-   speech→thinking→speech loop and streams its voice back.
+## Config & secrets
 
----
-
-## `agent/` — the voice agent (Python)
-
-The entire brain is **one file**: `agent/src/agent.py` (~85 lines).
-
-**`DefaultAgent`** — defines the assistant's personality via a system prompt: a website
-helper that answers in 1–2 plain-text sentences, navigates pages, and says "I could not find
-that here" when stuck. `on_enter()` makes it greet the user immediately on connect.
-
-**`entrypoint()`** — wires up the **voice pipeline** (`AgentSession`), which is the heart of it:
-
-| Stage              | Model                      | Role                                      |
-|--------------------|----------------------------|-------------------------------------------|
-| **STT**            | `deepgram/nova-3`          | speech → text                             |
-| **LLM**            | `openai/gpt-4.1-nano`      | text → response                           |
-| **TTS**            | `cartesia/sonic-3`         | response → speech                         |
-| **VAD**            | `silero`                   | voice activity detection                  |
-| **Turn detection** | `MultilingualModel`        | when the user has finished their turn     |
-| **Noise cancel**   | `ai_coustics` (QUAIL_VF_S) | clean up mic input                        |
-
-All models are accessed through **LiveKit Inference** (`inference.STT/LLM/TTS`) rather than
-direct provider SDKs. `preemptive_generation=True` starts generating before the user fully
-stops, for lower latency. `prewarm()` loads the VAD model once per worker process for speed.
-`@server.rtc_session(agent_name="assistant-2473")` registers it under a name — that name is
-the link to the web side.
-
-**Supporting files:** `pyproject.toml` (deps, managed by `uv`), `Dockerfile` + `livekit.toml`
-(deployment to LiveKit Cloud), `.env.local` (the `LIVEKIT_*` secrets), and
-`CLAUDE.md`/`AGENTS.md`/`.claude/skills/` for AI coding-assistant guidance.
-
----
-
-## `web/` — the embeddable widget (Next.js)
-
-This produces two things: the **widget bundle** users embed, and a **token-minting API**.
-
-### The embed delivery chain
-- **`public/embed.js`** — the tiny loader clients paste. Guards against double-loading, reads
-  `data-lk-sandbox-id`, waits for the page to be idle, then injects the real bundle. Keeps the
-  host page fast.
-- **`webpack.config.js`** — separately bundles
-  `components/embed-popup/standalone-bundle-root.tsx` into **`public/embed-popup.js`** (built
-  via `pnpm build-embed-popup-script`). This is a *separate* build from Next.js because it must
-  run standalone on any third-party site.
-- **`standalone-bundle-root.tsx`** — the bundle's entry point. It creates a `position:fixed`
-  wrapper pinned to max z-index, attaches a **Shadow DOM** root (so the widget's CSS can't leak
-  into — or be broken by — the host site), injects styles, fetches config, and mounts the React
-  app.
-
-### The widget UI (`components/embed-popup/`)
-- **`agent-client.tsx`** — the controller. Holds the LiveKit `Room`, manages open/closed state,
-  connects the mic + room on open, disconnects on close, handles errors. Wraps everything in
-  `RoomContext`.
-- **`trigger.tsx`** — the closed-state launcher pill ("Start the demo" + orb).
-- **`popup-view.tsx`** — the open-state pill: shows agent state (Listening/Thinking/Speaking),
-  mic mute toggle, end-call and minimize buttons. Times out with an error if the agent never
-  joins.
-- **`agent-orb.tsx`, `audio-visualizer.tsx`, `border-line.tsx`** — the visuals: the animated
-  orb, audio levels, and the traveling green border light.
-- **`error-message.tsx`, `microphone-toggle.tsx`, `transcript.tsx`, `action-bar.tsx`** —
-  supporting UI.
-
-### The token API
-- **`app/api/connection-details/route.ts`** — the **only backend logic**. On POST, it mints a
-  15-minute LiveKit `AccessToken`, generates a random room + participant name, and embeds the
-  `agentName` in the room config (so LiveKit dispatches the right agent). Wide-open CORS because
-  it's called from third-party sites. This is where the `LIVEKIT_API_SECRET` lives — never
-  exposed to the browser.
-- **`hooks/use-connection-details.ts`** — client side of that: fetches tokens, checks JWT
-  expiry, refreshes when stale.
-
-### Two embed flavors
-There are actually **two** widget implementations:
-- **`embed-popup/`** — the floating pill injected via `<script>` (the main product, what
-  `embed.js` loads).
-- **`embed-iframe/`** — an alternative rendered at the `/embed` route (`app/(iframe)/`), meant
-  to be dropped into an `<iframe>`. Same idea, different isolation strategy.
-
-### App routes & config
-- **`app/(app)/page.tsx`** — the demo/welcome landing page.
-- **`app/test/popup/page.tsx`** — a minimal page to test the *bundled* `embed-popup.js` against
-  bare styling (debugging the shadow-DOM CSS).
-- **`app-config.ts`** — branding/feature defaults: `agentName: 'assistant-2473'`, green accent,
-  no chat/video/screenshare, greeting text. `lib/env.ts` can override these from a remote
-  sandbox config endpoint per `sandboxId`.
-
----
-
-## Key things to know
-
-- **The two halves are linked by one string:** `agent_name = "assistant-2473"`. The token API
-  embeds it; LiveKit uses it to dispatch the right agent. It appears in `agent.py`,
-  `app-config.ts`, and `embed.js`.
-- **Secrets** (`LIVEKIT_URL/API_KEY/API_SECRET`) live only in `.env.local` files (gitignored)
-  on both sides and in the Vercel/LiveKit dashboards.
-- **The widget bundle is built separately** from the Next.js app — if you change popup code, you
-  must re-run `pnpm build-embed-popup-script` or the embed won't update.
-- **Shadow DOM** is the isolation mechanism that lets this safely run on any website.
-
----
+- Voice ↔ text are linked by one string: `agent_name = "assistant-2473"`.
+- Secrets live only in gitignored `.env.local` / `.env`:
+  `LIVEKIT_URL/API_KEY/API_SECRET` (both halves) + `OPENAI_API_KEY` (the brain).
+- `NEXT_PUBLIC_CONN_DETAILS_ENDPOINT` must be a **relative** path (`/api/connection-details`)
+  so the widget calls its own origin on any port.
 
 ## Embed snippet
 
 ```html
-<script
-  src="https://<your-app>.vercel.app/embed.js"
-  data-lk-sandbox-id="assistant-2473"
-  async
-></script>
+<script src="https://<app>.vercel.app/embed.js" data-lk-sandbox-id="assistant-2473" async></script>
 ```

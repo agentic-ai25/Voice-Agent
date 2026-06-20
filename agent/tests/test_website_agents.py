@@ -14,6 +14,7 @@ import pytest
 SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
+from site_prompts import SITE_CONTEXT, get_site_instructions  # noqa: E402
 from website_agents import (  # noqa: E402
     resolve_history,
     resolve_redirect,
@@ -108,3 +109,19 @@ def test_triage_agent_has_expected_tools_and_handoffs():
     assert {"search_site_content", "get_redirect_url", "navigate_history"} <= tool_names
     handoff_names = {h.name for h in triage_agent.handoffs}
     assert {"Lead Capture", "Booking"} == handoff_names
+
+
+# --- per-site prompt templates -----------------------------------------------
+def test_site_template_swaps_context_and_keeps_common_rules():
+    sf = get_site_instructions("salesforce")
+    default = get_site_instructions("default")
+    assert "Salesforce" in sf and "Salesforce" not in default
+    # Shared behavior rules are appended to every template.
+    for instr in (sf, default):
+        assert "navigate_history" in instr
+        assert "action 'none'" in instr  # the don't-navigate-to-missing-page rule
+
+
+def test_unknown_template_falls_back_to_default():
+    assert get_site_instructions("nope") == get_site_instructions("default")
+    assert "default" in SITE_CONTEXT
