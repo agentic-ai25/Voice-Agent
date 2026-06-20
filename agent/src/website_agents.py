@@ -152,10 +152,15 @@ def resolve_redirect(intent: str, pages: list[dict]) -> dict:
         page = next(
             (p for p in pages if normalized_intent in p["page_type"].lower()), None
         )
+    # Title-substring fallbacks: when several titles contain the keyword, prefer
+    # the tightest (shortest) title — e.g. "wati" -> "Aisensy Vs Wati" rather than
+    # "Aisensy Vs Interakt Vs Wati", which also contains the word.
     if not page:
-        page = next((p for p in pages if normalized_intent in p["title"].lower()), None)
+        matches = [p for p in pages if normalized_intent in p["title"].lower()]
+        page = min(matches, key=lambda p: len(p["title"]), default=None)
     if not page:
-        page = next((p for p in pages if intent in p["title"].lower()), None)
+        matches = [p for p in pages if intent in p["title"].lower()]
+        page = min(matches, key=lambda p: len(p["title"]), default=None)
 
     if not page:
         return {"action": "none", "message": f"No '{intent}' page found."}
@@ -165,6 +170,18 @@ def resolve_redirect(intent: str, pages: list[dict]) -> dict:
         "url": page["url"],
         "label": page["title"],
         "page_details": page["content"][:1200],
+    }
+
+
+def confirm_booking(name: str, email: str, when: str) -> dict:
+    """Build a demo-mode booking confirmation action for the requested time.
+    DEMO MODE: this confirms the slot the visitor named; it does not create a real
+    calendar event (that's the Calendly path in book_calendar_meeting)."""
+    return {
+        "action": "schedule_confirmed",
+        "when": when,
+        "name": name,
+        "email": email,
     }
 
 
@@ -270,6 +287,27 @@ def book_calendar_meeting(name: str, email: str) -> dict:
     return {"action": "schedule", "url": url, "label": "Pick a time"}
 
 
+# --- demo-mode instant booking -----------------------------------------------
+@function_tool
+def book_demo_slot(name: str, email: str, when: str) -> dict:
+    """Book a demo or onboarding call at the time the visitor names (e.g.
+    'tomorrow at 3 PM'). DEMO MODE: this instantly confirms the requested slot and
+    returns a confirmation — it does not create a real calendar event. Collect and
+    confirm name, email and the requested time first. If the visitor gives only a
+    vague time (e.g. 'tomorrow afternoon'), pick a sensible concrete slot and pass
+    it as `when` so you can confirm an exact time."""
+    webhook = os.environ.get("INTEREST_FORM_WEBHOOK")
+    payload = {"name": name, "email": email, "when": when, "type": "demo_booking"}
+    if webhook:
+        try:
+            httpx.post(webhook, json=payload, timeout=15).raise_for_status()
+        except Exception as e:
+            return {"action": "error", "message": f"Booking failed: {e}"}
+    else:
+        print(f"[demo booking] {payload}")  # demo mode: log it
+    return confirm_booking(name, email, when)
+
+
 # --- generic website form submission ----------------------------------------
 @function_tool(strict_mode=False)
 def submit_website_form(form_action: str, form_data: dict) -> dict:
@@ -309,13 +347,16 @@ booking_agent = Agent(
     model="gpt-4o-mini",
     handoff_description="Use this if the visitor explicitly wants to book a demo, schedule a meeting, or get a booking link directly in the chat instead of visiting the contact page.",
     instructions=(
-        "Get the visitor's name and email, confirm them, then call "
-        "book_calendar_meeting. Tell them a scheduling link will open where they "
-        "pick a time. Do not invent times yourself.\n"
+        "Get the visitor's name, email, and the day/time they want for the demo or "
+        "onboarding call. Confirm those back, then call book_demo_slot with the "
+        "requested time. If they give a vague time like 'tomorrow afternoon', pick a "
+        "sensible concrete slot (e.g. 3 PM) and confirm that exact time. After "
+        "booking, warmly confirm it's booked for that time and that a confirmation "
+        "is on the way.\n"
         "CRITICAL: This is a spoken voice conversation. Do NOT use any markdown "
         "formatting. Output only clean, plain text. Keep replies short (1-2 sentences)."
     ),
-    tools=[book_calendar_meeting],
+    tools=[book_demo_slot],
 )
 
 

@@ -96,9 +96,18 @@ Pro ₹3,200/month (most popular), Premium ₹9,100/month, Unlimited ₹45,000/m
 Enterprise (custom) — all with unlimited users. There is NO setup fee and AiSensy
 doesn't charge to procure the WhatsApp Business API. Meta's template-message charges
 are billed separately: Marketing ₹1.09 per message, Utility and Authentication ₹0.145,
-and Service messages are free within the 24-hour window. Pro adds over Basic: campaign
-scheduling, click tracking, budget & analytics and project APIs. Chatbots & AI Agents
+and Service messages are free within the 24-hour window. Pro adds over Basic the three
+things that matter most for stores: broadcast/campaign scheduling, click tracking on CTA
+buttons, and retargeting (re-broadcast to people who didn't convert) — plus budget &
+analytics and project APIs. Chatbots & AI Agents
 are add-ons (Basic ₹2,500/month, Pro+AI ₹3,500/month). There's a 14-day free trial.
+E-COMMERCE / SHOPIFY: AiSensy has native Shopify integration. When a shopper abandons a
+cart, the chatbot automatically sends a WhatsApp reminder to recover it; order updates and
+delivery notifications are automated the same way. For a Shopify store, Basic ₹1,500/month
+is the usual starting point.
+COMPARISONS: vs Wati — Wati starts at ₹2,499/month, about ₹1,000 more than AiSensy's Basic,
+and includes less automation at the entry tier. Send visitors to the "wati" comparison page
+for the full breakdown.
 COMPANY: AiSensy Communications Private Limited is based in India, has a 100+ person
 team, has sent 1.5 billion+ messages, generated 200 crore+ in revenue for customers,
 and was named by Meta as Emerging Partner of the Year 2023 and CTWA Partner of the
@@ -106,7 +115,11 @@ Year 2024. Note: the website does not publish individual founder names, so if as
 who founded it, say that isn't listed on the site and offer the About page or company
 background instead — do not guess a name.
 PROOF: customers include PhysicsWallah, IndiaMART, Adani Realty, Delhi Transport
-Corporation, Cosco, Skullcandy, Thyrocare, NMIMS, Yakult and HomeLane. To get started
+Corporation, Cosco, Skullcandy, Thyrocare, NMIMS, Yakult and HomeLane. Headline D2C/brand
+results (state these when asked for real examples): Cosco grew its WhatsApp audience reach
+from 35% to around 90% with a 98% message open rate by switching to unlimited broadcasts;
+PhysicsWallah generated 3x more leads (and 5x more course sales). Offer the case studies
+page for the full stories. To get started
 a visitor needs a business, an unused phone number and a Facebook Business Manager;
 AiSensy also helps apply for the WhatsApp green-tick/blue-tick verified badge, and
 setup is typically live within a few days.

@@ -22,6 +22,7 @@ export type UiAction =
   | { action: 'redirect'; url: string; label?: string }
   | { action: 'history'; direction: 'back' | 'forward' }
   | { action: 'schedule'; url: string; label?: string }
+  | { action: 'schedule_confirmed'; when?: string; name?: string; email?: string }
   | { action: 'form_submitted'; message?: string; email?: string }
   | { action: string; [key: string]: unknown };
 
@@ -90,7 +91,8 @@ export function handleUiAction(action: UiAction): void {
         if (url) window.open(url, '_blank', 'noopener,noreferrer');
         break;
       }
-      // 'form_submitted' / 'error' / 'none' need no page navigation.
+      // 'schedule_confirmed' (demo-mode booking) / 'form_submitted' / 'error' /
+      // 'none' need no page navigation — the confirmation is delivered in chat.
       default:
         break;
     }

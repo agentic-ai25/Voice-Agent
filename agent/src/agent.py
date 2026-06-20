@@ -53,7 +53,9 @@ async def record_session(record: dict) -> None:
     """Insert a session row into Supabase, and auto-register the site so a brand-new
     domain shows up in the dashboard/admin. Best-effort — never breaks the agent."""
     if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
-        logger.info("analytics skipped (Supabase not configured): %s", record.get("room_name"))
+        logger.info(
+            "analytics skipped (Supabase not configured): %s", record.get("room_name")
+        )
         return
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
@@ -68,7 +70,10 @@ async def record_session(record: dict) -> None:
             if host and host != "unknown":
                 await client.post(
                     f"{SUPABASE_URL}/rest/v1/sites?on_conflict=hostname",
-                    headers={**headers, "Prefer": "resolution=ignore-duplicates,return=minimal"},
+                    headers={
+                        **headers,
+                        "Prefer": "resolution=ignore-duplicates,return=minimal",
+                    },
                     json={"hostname": host, "label": host},
                 )
             r = await client.post(
@@ -77,7 +82,9 @@ async def record_session(record: dict) -> None:
                 json=record,
             )
             r.raise_for_status()
-            logger.info("recorded session for %s (%ss)", host, record.get("duration_seconds"))
+            logger.info(
+                "recorded session for %s (%ss)", host, record.get("duration_seconds")
+            )
     except Exception as e:
         logger.warning("failed to record session: %s", e)
 
@@ -238,7 +245,9 @@ async def entrypoint(ctx: JobContext):
                 "visitor_id": visitor_id,
                 "room_name": ctx.room.name,
                 "template": template,
-                "started_at": datetime.fromtimestamp(started_at, timezone.utc).isoformat(),
+                "started_at": datetime.fromtimestamp(
+                    started_at, timezone.utc
+                ).isoformat(),
                 "ended_at": datetime.now(timezone.utc).isoformat(),
                 "duration_seconds": int(time.time() - started_at),
                 "user_turns": agent.user_turns,
@@ -259,7 +268,7 @@ async def entrypoint(ctx: JobContext):
         tts=inference.TTS(
             model="cartesia/sonic-3",
             voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-            language="en"
+            language="en",
         ),
         turn_handling=TurnHandlingOptions(turn_detection=MultilingualModel()),
         vad=ctx.proc.userdata["vad"],
