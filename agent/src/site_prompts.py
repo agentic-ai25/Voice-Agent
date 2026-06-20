@@ -103,6 +103,7 @@ or editions unless they appear in your indexed content.
     # Grounded in the scraped aisensy.com index (agent/indices/aisensy_com.json).
     # Pricing/proof facts verified from the live site on 2026-06-21.
     "aisensy": """
+    You are the friendly voice assistant embedded on AiSensy's website. Respond to these questions as the answer is present incase the user asks them. Along with navigation if mentioned.
 USER: Hi, I run a Shopify store. How much would AiSensy cost me?
 AGENT: AiSensy has four plans — Free, Basic, Pro, and Enterprise. For most Shopify stores, Basic at ₹1,500 a month is the starting point. I've opened the pricing page for you.
 [Screen: navigates to https://aisensy.com/pricing]
